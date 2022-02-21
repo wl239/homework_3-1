@@ -1,4 +1,3 @@
-
 import pandas as pd
 from ibapi.client import EClient
 from ibapi.wrapper import EWrapper
@@ -8,7 +7,8 @@ import time
 # If you want different default values, configure it here.
 default_hostname = '127.0.0.1'
 default_port = 7497
-default_client_id = 10645 # can set and use your Master Client ID
+default_client_id = 10645  # can set and use your Master Client ID
+
 
 # This is the main app that we'll be using for sync and async functions.
 class ibkr_app(EWrapper, EClient):
@@ -27,7 +27,7 @@ class ibkr_app(EWrapper, EClient):
         # I've already done the same general process you need to go through
         # in the self.error_messages instance variable, so you can use that as
         # a guide.
-        self.historical_data = ''
+        self.historical_data = pd.DataFrame()
         self.historical_data_end = ''
         self.contract_details = ''
         self.contract_details_end = ''
@@ -53,12 +53,17 @@ class ibkr_app(EWrapper, EClient):
         # Take a look at candlestick_plot.ipynb for some help!
         # assign the dataframe to self.historical_data.
         # print(reqId, bar)
-        self.historical_data = bar
+        temp = pd.DataFrame([vars(bar)], index=None)
+       # temp['date'] = pd.to_datetime(temp['date'])
+        self.historical_data = pd.concat([self.historical_data, temp])
+        self.historical_data['date'] = pd.to_datetime(self.historical_data['date'])
+        #  self.historical_data.set_index('date', inplace=True)
 
     def historicalDataEnd(self, reqId: int, start: str, end: str):
         # super().historicalDataEnd(reqId, start, end)
         print("HistoricalDataEnd. ReqId:", reqId, "from", start, "to", end)
         self.historical_data_end = reqId
+
 
 def fetch_managed_accounts(hostname=default_hostname, port=default_port,
                            client_id=default_client_id):
@@ -66,14 +71,17 @@ def fetch_managed_accounts(hostname=default_hostname, port=default_port,
     app.connect(hostname, port, client_id)
     while not app.isConnected():
         time.sleep(0.01)
+
     def run_loop():
         app.run()
+
     api_thread = threading.Thread(target=run_loop, daemon=True)
     api_thread.start()
     while isinstance(app.next_valid_id, type(None)):
         time.sleep(0.01)
     app.disconnect()
     return app.managed_accounts
+
 
 def fetch_historical_data(contract, endDateTime='', durationStr='30 D',
                           barSizeSetting='1 hour', whatToShow='MIDPOINT',
@@ -83,8 +91,10 @@ def fetch_historical_data(contract, endDateTime='', durationStr='30 D',
     app.connect(hostname, port, client_id)
     while not app.isConnected():
         time.sleep(0.01)
+
     def run_loop():
         app.run()
+
     api_thread = threading.Thread(target=run_loop, daemon=True)
     api_thread.start()
     while isinstance(app.next_valid_id, type(None)):
