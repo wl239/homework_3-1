@@ -6,8 +6,8 @@ import time
 
 # If you want different default values, configure it here.
 default_hostname = '127.0.0.1'
-default_port = 7497
-default_client_id = 10645  # can set and use your Master Client ID
+default_port = 4002
+default_client_id = 123  # can set and use your Master Client ID
 
 
 # This is the main app that we'll be using for sync and async functions.
