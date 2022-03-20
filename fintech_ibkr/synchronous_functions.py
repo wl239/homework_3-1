@@ -6,7 +6,7 @@ import time
 
 # If you want different default values, configure it here.
 default_hostname = '127.0.0.1'
-default_port = 4002
+default_port = 7497
 default_client_id = 123  # can set and use your Master Client ID
 
 
@@ -54,7 +54,7 @@ class ibkr_app(EWrapper, EClient):
         # assign the dataframe to self.historical_data.
         # print(reqId, bar)
         temp = pd.DataFrame([vars(bar)], index=None)
-       # temp['date'] = pd.to_datetime(temp['date'])
+        # temp['date'] = pd.to_datetime(temp['date'])
         self.historical_data = pd.concat([self.historical_data, temp])
         self.historical_data['date'] = pd.to_datetime(self.historical_data['date'])
         #  self.historical_data.set_index('date', inplace=True)
@@ -63,6 +63,15 @@ class ibkr_app(EWrapper, EClient):
         # super().historicalDataEnd(reqId, start, end)
         print("HistoricalDataEnd. ReqId:", reqId, "from", start, "to", end)
         self.historical_data_end = reqId
+
+    def contractDetails(self, reqId: int, contractDetails):
+        print(type(contractDetails))
+        print(contractDetails)
+        self.contract_details = contractDetails
+
+    def contractDetailsEnd(self, reqId: int):
+        print("ContractDetailsEnd. ReqId:", reqId)
+        self.contract_details_end = reqId
 
 
 def fetch_managed_accounts(hostname=default_hostname, port=default_port,
@@ -107,3 +116,28 @@ def fetch_historical_data(contract, endDateTime='', durationStr='30 D',
         time.sleep(0.01)
     app.disconnect()
     return app.historical_data
+
+
+def fetch_contract_details(contract, hostname=default_hostname,
+                           port=default_port, client_id=default_client_id):
+    app = ibkr_app()
+    app.connect(hostname, port, client_id)
+    while not app.isConnected():
+        time.sleep(0.01)
+
+    def run_loop():
+        app.run()
+
+    api_thread = threading.Thread(target=run_loop, daemon=True)
+    api_thread.start()
+    while isinstance(app.next_valid_id, type(None)):
+        time.sleep(0.01)
+    tickerId = app.next_valid_id
+    app.reqContractDetails(tickerId, contract)
+    while app.contract_details_end != tickerId:
+        time.sleep(0.01)
+        if app.error_messages.iloc[-1]['reqId'] == 1:
+            app.disconnect()
+            return app.error_messages.iloc[-1]['errorString']
+    app.disconnect()
+    return app.contract_details

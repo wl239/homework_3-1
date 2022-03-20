@@ -5,6 +5,7 @@ from dash import html
 from dash.dependencies import Input, Output, State
 from ibapi.contract import Contract
 from fintech_ibkr import *
+import dash_bootstrap_components as dbc
 import pandas as pd
 
 # Make a Dash app!
@@ -15,8 +16,8 @@ server = app.server
 app.layout = html.Div([
 
     # Section title
-    html.H3("Section 1: Fetch & Display exchange rate historical data"),
-    html.H4("Select value for whatToShow:"),
+    html.H2("Section 1: Fetch & Display exchange rate historical data"),
+    html.H3("Select value for whatToShow:"),
     html.Div(
         dcc.Dropdown(
             ["TRADES", "MIDPOINT", "BID", "ASK", "BID_ASK", "ADJUSTED_LAST",
@@ -28,14 +29,14 @@ app.layout = html.Div([
         ),
         style={'width': '365px'}
     ),
-    html.H4("Select value for endDateTime:"),
+    html.Br(),
+    html.H3("Select value for endDateTime:"),
     html.Div(
         children=[
-            html.P("You may select a specific endDateTime for the call to " + \
-                   "fetch_historical_data. If any of the below is left empty, " + \
-                   "the current present moment will be used.")
+            html.P("You may select a specific endDateTime for the call to fetch_historical_data. " +
+                   "If any of the below is left empty, the current present moment will be used.")
         ],
-        style={'width': '365px'}
+        style={'width': '490px'}
     ),
     html.Div(
         children=[
@@ -43,14 +44,16 @@ app.layout = html.Div([
                 children=[
                     html.Label('Date:'),
                     dcc.DatePickerSingle(id='edt-date')
-                ]
+                ],
             ),
+            html.Br(),
             html.Div(
                 children=[
                     html.Label('Hour:'),
                     dcc.Dropdown(list(range(24)), id='edt-hour'),
                 ],
                 style={
+                    'width': '7%',
                     'display': 'inline-block',
                     'padding-right': '10px'
                 }
@@ -61,6 +64,7 @@ app.layout = html.Div([
                     dcc.Dropdown(list(range(60)), id='edt-minute'),
                 ],
                 style={
+                    'width': '7%',
                     'display': 'inline-block',
                     'padding-right': '10px'
                 }
@@ -70,29 +74,31 @@ app.layout = html.Div([
                     html.Label('Second:'),
                     dcc.Dropdown(list(range(60)), id='edt-second'),
                 ],
-                style={'display': 'inline-block'}
+                style={'width': '7%', 'display': 'inline-block'}
             )
         ]
     ),
-    html.H4("Enter a number and select a unit for durationStr:"),
+    html.Br(),
+    html.H3("Enter a number and select a unit for durationStr:"),
     html.Div(
         children=[
-            html.P("You may select a specific durationStr for the call to " +
-                   "fetch_historical_data.")
+            html.P("You may select a specific durationStr for the call to fetch_historical_data.")
         ],
-        style={'width': '365px'}
+        style={'width': '490px'}
     ),
     html.Div(
         children=[
             html.Div(
                 children=[
                     html.Label('Number:'),
-                    dcc.Input(id='duration-num')
+                    dcc.Input(id='duration-num', type='number')
                 ],
                 style={
+                    'width': '50px', 'margin-top': '5px',
                     'margin-right': '30px',
                 }
             ),
+            html.Br(),
             html.Div(
                 children=[
                     html.Label('Unit:'),
@@ -104,7 +110,8 @@ app.layout = html.Div([
             )
         ]
     ),
-    html.H4("Select a bar size:"),
+    html.Br(),
+    html.H3("Select a bar size:"),
     html.Div(
         children=[
             html.Label("Bar Size:"),
@@ -115,7 +122,8 @@ app.layout = html.Div([
             'width': '100px'
         }
     ),
-    html.H4("Select whether only use data within regular trading hours:"),
+    html.Br(),
+    html.H3("Select whether only use data within regular trading hours:"),
     html.Div(
         children=[
             html.Label("Choose:"),
@@ -127,7 +135,8 @@ app.layout = html.Div([
             'width': '365px'
         }
     ),
-    html.H4("Enter a currency pair:"),
+    html.Br(),
+    html.H3("Enter a currency pair:"),
     html.P(
         children=[
             "See the various currency pairs here: ",
@@ -147,17 +156,30 @@ app.layout = html.Div([
         style={'display': 'inline-block', 'padding-top': '5px'}
     ),
     # Submit button
-    html.Button('Submit', id='submit-button', n_clicks=0),
+    dbc.Button('Submit', id='submit-button', n_clicks=0),
     # Line break
+    html.Br(),
     html.Br(),
     # Div to hold the initial instructions and the updated info once submit is pressed
     html.Div(id='currency-output', children='Enter a currency code and press submit'),
     # Div to hold the candlestick graph
-    html.Div([dcc.Graph(id='candlestick-graph')]),
+    dcc.Loading(
+        type="circle", color='#7BC043',
+        children=html.Div([dcc.Graph(id='candlestick-graph')])),
+    # dbc.Row(dbc.Col(
+    #     dbc.Spinner(
+    #         children=[html.Div(dcc.Graph(id='candlestick-graph')),],
+    #         size="md", color="red", type="border", fullscreen=False,
+    #         spinner_style={"width": "10rem", "height": "10rem"}
+    #     ),
+    # ),),
+    # html.Div(
+    #     dcc.Graph(id='candlestick-graph')
+    # ),
     # Another line break
-    html.Br(),
+    #   html.Br(),
     # Section title
-    html.H6("Make a Trade"),
+    html.H3("Make a Trade"),
     # Div to confirm what trade was made
     html.Div(id='trade-output'),
     # Radio items to select buy or sell
@@ -170,6 +192,7 @@ app.layout = html.Div([
         value='BUY'
     ),
     # Text input for the currency pair to be traded
+    html.Br(),
     dcc.Input(id='trade-currency', value='AUDCAD', type='text'),
     # Numeric input for the trade amount
     dcc.Input(id='trade-amt', value='20000', type='number'),
@@ -221,6 +244,21 @@ def update_candlestick_graph(n_clicks, currency_string, what_to_show,
     contract.secType = 'CASH'
     contract.exchange = 'IDEALPRO'  # 'IDEALPRO' is the currency exchange.
     contract.currency = currency_string.split(".")[1]
+
+    contract_details = fetch_contract_details(contract)
+
+    message = "Submitted query for " + currency_string
+
+    if isinstance(contract_details, str):
+        message = contract_details + ". Please check input!"
+        return message, go.Figure()
+
+    # 1 situation
+    s = str(contract_details).split(",")[10]
+    if s == currency_string:
+        message = "Successfully found the right contract! " + message
+    else:
+        return "Contract symbol does not inconsistent with the input data", go.Figure()
 
     ############################################################################
     ############################################################################
@@ -283,7 +321,7 @@ def update_candlestick_graph(n_clicks, currency_string, what_to_show,
     ############################################################################
 
     # Return your updated text to currency-output, and the figure to candlestick-graph outputs
-    return ('Submitted query for ' + currency_string), fig
+    return message, fig
 
 
 # Callback for what to do when trade-button is pressed
