@@ -406,7 +406,18 @@ app.layout = html.Div([
     html.Button('Trade', id='trade-button', n_clicks=0),
     html.Br(),
     html.Br(),
-    dash_table.DataTable(df.to_dict('records')),  #, [{"name": i, "id": i} for i in df.columns], id='table')
+    dash_table.DataTable(
+        data=df.to_dict('records'),
+        columns=[{'id': c, 'name': c} for c in df.columns],
+        fixed_columns={'headers': True, 'data': 1},
+        style_table={'minWidth': '100%'},
+        style_cell={
+            # all three widths are needed
+            'minWidth': '180px', 'width': '180px', 'maxWidth': '180px',
+            'overflow': 'hidden',
+            'textOverflow': 'ellipsis',
+        },
+    ),
     html.Br()
 ])
 
@@ -607,9 +618,10 @@ def trade(n_clicks, sec_type, contract_symbol, currency, exchange, primary_excha
     df_file.to_csv(file_path)
 
     print("Successful!")
+    msg = "Successful order! " + msg
 
     # Return the message, which goes to the trade-output div's children
-    return msg, df_file.to_dict('records')
+    return msg
 
 # Run it!
 if __name__ == '__main__':
