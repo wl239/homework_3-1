@@ -1,0 +1,2 @@
+timestamp,order_id,client_id,perm_id,con_id,symbol,action,size,order_type,lmt_price
+2022-03-29 14:42:31,0,10645,495759210.0,0,AAPL,SELL,10,MKT,

@@ -1,264 +1,494 @@
+import time
+
 import dash
+import pandas as pd
 import plotly.graph_objects as go
-from dash import dcc
-from dash import html
 from dash.dependencies import Input, Output, State
 from ibapi.contract import Contract
+from ibapi.order import Order
 from fintech_ibkr import *
-import dash_bootstrap_components as dbc
-import pandas as pd
+from dash import dcc
+from dash import html, dash_table
+import dash_daq as daq
+from datetime import date
 
 # Make a Dash app!
 app = dash.Dash(__name__)
-server = app.server
-
+df = pd.read_csv('submitted_orders.csv')
 # Define the layout.
 app.layout = html.Div([
-
+    html.Div(
+        id='sync-connection-status',
+        children='False',
+        style={'display': 'none'}
+    ),
     # Section title
     html.H2("Section 1: Fetch & Display exchange rate historical data"),
-    html.H3("Select value for whatToShow:"),
-    html.Div(
-        dcc.Dropdown(
-            ["TRADES", "MIDPOINT", "BID", "ASK", "BID_ASK", "ADJUSTED_LAST",
-             "HISTORICAL_VOLATILITY", "OPTION_IMPLIED_VOLATILITY", 'REBATE_RATE',
-             'FEE_RATE', "YIELD_BID", "YIELD_ASK", 'YIELD_BID_ASK', 'YIELD_LAST',
-             "SCHEDULE"],
-            "MIDPOINT",
-            id='what-to-show'
+    html.Div([
+        html.H3("Select value for whatToShow:"),
+        html.Div(
+            dcc.Dropdown(
+                ["MIDPOINT", "BID", "ASK", "BID_ASK", "HISTORICAL_VOLATILITY"],
+                "MIDPOINT",
+                id='what-to-show'
+            ),
+            style={'width': '300px'}
         ),
-        style={'width': '365px'}
+        html.Br(),
+        html.H3("Select value for endDateTime:"),
+        html.Div(
+            children=[
+                html.P(
+                    "You may select a specific endDateTime for the call to fetch_historical_data. " +
+                    "If any of the below is empty, the current present moment will be used."
+                )
+            ],
+            style={'width': '490px'}
+        ),
+        html.Div(
+            children=[
+                html.Div(
+                    children=[
+                        html.Label('Date:'),
+                        dcc.DatePickerSingle(id='edt-date')
+                    ],
+                ),
+                html.Br(),
+                html.Div(
+                    children=[
+                        html.Label('Hour:'),
+                        dcc.Dropdown(list(range(24)), id='edt-hour'),
+                    ],
+                    style={
+                        'width': '15%',
+                        'display': 'inline-block',
+                        'padding-right': '15px'
+                    }
+                ),
+                html.Div(
+                    children=[
+                        html.Label('Minute:'),
+                        dcc.Dropdown(list(range(60)), id='edt-minute'),
+                    ],
+                    style={
+                        'width': '15%',
+                        'display': 'inline-block',
+                        'padding-right': '15px'
+                    }
+                ),
+                html.Div(
+                    children=[
+                        html.Label('Second:'),
+                        dcc.Dropdown(list(range(60)), id='edt-second'),
+                    ],
+                    style={'width': '15%', 'display': 'inline-block'}
+                )
+            ]
+        ),
+        html.Br(),
+        html.H3(
+            "Select value for barSizeSetting:",
+            style={'display': 'inline-block'}
+        ),
+        dcc.Dropdown(
+            options=[
+                '1 secs', '5 secs', '10 secs', '15 secs', '30 secs', '1 min',
+                '2 mins', '3 mins',	'5 mins', '10 mins', '15 mins',
+                '20 mins', '30 mins', '1 hour',	'2 hours',	'3 hours',
+                '4 hours', '8 hours',  '1 day', '1 week', '1 month'
+            ],
+            id='bar-size',
+            value='1 hour',
+            style={
+                'width': '100px',
+                'display': 'inline-block',
+                'vertical-align': 'middle',
+                'padding-left': '15px'
+            }
+        ),
+        html.Br(),
+        html.H3("Select value for durationStr:"),
+        html.Div(
+            children=[
+                html.Div(
+                    children=[
+                        html.Label('Amount:'),
+                        dcc.Input(
+                            id='duration-amount',
+                            value=30,
+                            type='number',
+                            style={'display': 'inline-block', 'width': '75px'}
+                        )
+                    ],
+                    style={
+                        'display': 'inline-block',
+                        'margin-right': '20px',
+                    }
+                ),
+                html.Div(
+                    children=[
+                        html.Label('Unit:', style={'display': 'inline-block'}),
+                        dcc.Dropdown(
+                            options = [
+                                {'label': 'Seconds', 'value': 'S'},
+                                {'label': 'Days', 'value': 'D'},
+                                {'label': 'Weeks', 'value': 'W'},
+                                {'label': 'Months', 'value': 'M'},
+                                {'label': 'Years', 'value': 'Y'}
+                            ],
+                            id='duration-unit',
+                            value='D',
+                            style={
+                                'width': '75px',
+                                'display': 'inline-block',
+                                'vertical-align': 'middle'
+                            }
+                        ),
+                    ],
+                    style={
+                        'display': 'inline-block',
+                        'padding-right': '5px',
+                        'vertical-align': 'middle'
+                    }
+                )
+            ]
+        ),
+        html.Br(),
+        html.H3("Use RTH?", style={'display': 'inline-block'}),
+        html.Div(
+            children=[
+                html.P("NO", style={'display': 'inline-block'}),
+                daq.ToggleSwitch(
+                    id='use-rth',
+                    value=False,
+                    style={'display': 'inline-block'}
+                ),
+                html.P("YES", style={'display': 'inline-block'}),
+            ],
+            style={'display': 'inline-block', 'padding-left': '10px'}
+        ),
+        html.Br(),
+        html.H3("Enter a currency pair:"),
+        html.P(
+            children=[
+                "See the various currency pairs here: ",
+                html.A(
+                    "currency pairs",
+                    href=('https://www.interactivebrokers.com/en/index.php?f'
+                          '=2222&exch=ibfxpro&showcategories=FX')
+                )
+            ]
+        ),
+        # Currency pair text input, within its own div.
+        html.Div(
+            # The input object itself
+            ["Input Currency: ", dcc.Input(
+                id='currency-input', value='AUD.CAD', type='text'
+            )],
+            # Style it so that the submit button appears beside the input.
+            style={'display': 'inline-block', 'padding-top': '5px'}
+        ),
+        # Submit button
+        html.Button('Submit', id='submit-button', n_clicks=0),
+        html.Br(),
+        html.Br(),
+        # Div for initial instructions and the updated info once submit is pressed
+        html.Div(
+            id='currency-output',
+            children='Enter a currency code and press submit'),
+    ],
+        style={'width': '550px', 'display': 'inline-block'}
     ),
-    html.Br(),
-    html.H3("Select value for endDateTime:"),
-    html.Div(
-        children=[
-            html.P("You may select a specific endDateTime for the call to fetch_historical_data. " +
-                   "If any of the below is left empty, the current present moment will be used.")
-        ],
-        style={'width': '490px'}
-    ),
-    html.Div(
-        children=[
-            html.Div(
-                children=[
-                    html.Label('Date:'),
-                    dcc.DatePickerSingle(id='edt-date')
-                ],
+    html.Div([
+        html.Div([
+            html.Div([
+                html.H3(
+                    'Hostname: ',
+                    style={'display': 'inline-block', 'margin-right': 20}
+                ),
+                dcc.Input(
+                    id='host',
+                    value='127.0.0.1',
+                    type='text',
+                    style={'display': 'inline-block'}
+                )],
+                style={'display': 'inline-block'}
             ),
-            html.Br(),
-            html.Div(
-                children=[
-                    html.Label('Hour:'),
-                    dcc.Dropdown(list(range(24)), id='edt-hour'),
-                ],
-                style={
-                    'width': '7%',
-                    'display': 'inline-block',
-                    'padding-right': '10px'
-                }
+            html.Div([
+                html.H3(
+                    'Port: ',
+                    style={'display': 'inline-block', 'margin-right': 59}
+                ),
+                dcc.Input(
+                    id='port',
+                    value='7497',
+                    type='text',
+                    style={'display': 'inline-block'}
+                )],
+                style = {'display': 'inline-block'}
             ),
-            html.Div(
-                children=[
-                    html.Label('Minute:'),
-                    dcc.Dropdown(list(range(60)), id='edt-minute'),
-                ],
-                style={
-                    'width': '7%',
-                    'display': 'inline-block',
-                    'padding-right': '10px'
-                }
-            ),
-            html.Div(
-                children=[
-                    html.Label('Second:'),
-                    dcc.Dropdown(list(range(60)), id='edt-second'),
-                ],
-                style={'width': '7%', 'display': 'inline-block'}
+            html.Div([
+                html.H3(
+                    'Client ID: ',
+                    style={'display': 'inline-block', 'margin-right': 27}
+                ),
+                dcc.Input(
+                    id='clientid',
+                    value='10645',
+                    type='text',
+                    style={'display': 'inline-block'}
+                )
+            ],
+                style={'display': 'inline-block'}
             )
         ]
+        ),
+        html.Br(),
+        html.Button('TEST SYNC CONNECTION', id='connect-button', n_clicks=0),
+        html.Div(id='connect-indicator'),
+        html.Div(id='contract-details')
+    ],
+        style={'width': '405px', 'display': 'inline-block',
+               'vertical-align': 'top', 'padding-left': '15px'}
     ),
-    html.Br(),
-    html.H3("Enter a number and select a unit for durationStr:"),
-    html.Div(
-        children=[
-            html.P("You may select a specific durationStr for the call to fetch_historical_data.")
-        ],
-        style={'width': '490px'}
-    ),
-    html.Div(
-        children=[
-            html.Div(
-                children=[
-                    html.Label('Number:'),
-                    dcc.Input(id='duration-num', type='number')
-                ],
-                style={
-                    'width': '50px', 'margin-top': '5px',
-                    'margin-right': '30px',
-                }
-            ),
-            html.Br(),
-            html.Div(
-                children=[
-                    html.Label('Unit:'),
-                    dcc.Dropdown(['S', 'D', 'W'], id='duration-unit')
-                ],
-                style={
-                    'width': '100px',
-                }
-            )
-        ]
-    ),
-    html.Br(),
-    html.H3("Select a bar size:"),
-    html.Div(
-        children=[
-            html.Label("Bar Size:"),
-            dcc.Dropdown(["1 sec", "5 secs", "15 secs", "30 secs", "1 min", "2 mins", "3 mins",
-                          "5 mins", "15 mins", "30 mins", "1 hour", "1 day"], "1 hour", id='bar-size'),
-        ],
-        style={
-            'width': '100px'
-        }
-    ),
-    html.Br(),
-    html.H3("Select whether only use data within regular trading hours:"),
-    html.Div(
-        children=[
-            html.Label("Choose:"),
-            dcc.Dropdown([{'label': 'use all data', 'value': False},
-                          {'label': 'use data within regularly trading hours', 'value': True}], value=True,
-                         id='use-rth'),
-        ],
-        style={
-            'width': '365px'
-        }
-    ),
-    html.Br(),
-    html.H3("Enter a currency pair:"),
-    html.P(
-        children=[
-            "See the various currency pairs here: ",
-            html.A(
-                "currency pairs",
-                href='https://www.interactivebrokers.com/en/index.php?f=2222&exch=ibfxpro&showcategories=FX'
-            )
-        ]
-    ),
-    # Currency pair text input, within its own div.
-    html.Div(
-        # The input object itself
-        ["Input Currency: ", dcc.Input(
-            id='currency-input', value='AUD.CAD', type='text'
-        )],
-        # Style it so that the submit button appears beside the input.
-        style={'display': 'inline-block', 'padding-top': '5px'}
-    ),
-    # Submit button
-    dbc.Button('Submit', id='submit-button', n_clicks=0),
     # Line break
     html.Br(),
-    html.Br(),
-    # Div to hold the initial instructions and the updated info once submit is pressed
-    html.Div(id='currency-output', children='Enter a currency code and press submit'),
     # Div to hold the candlestick graph
     dcc.Loading(
+        id="loading-1",
         type="circle", color='#7BC043',
-        children=html.Div([dcc.Graph(id='candlestick-graph')])),
-    # dbc.Row(dbc.Col(
-    #     dbc.Spinner(
-    #         children=[html.Div(dcc.Graph(id='candlestick-graph')),],
-    #         size="md", color="red", type="border", fullscreen=False,
-    #         spinner_style={"width": "10rem", "height": "10rem"}
-    #     ),
-    # ),),
-    # html.Div(
-    #     dcc.Graph(id='candlestick-graph')
-    # ),
+        children=html.Div([dcc.Graph(id='candlestick-graph')])
+    ),
     # Another line break
-    #   html.Br(),
+    html.Br(),
     # Section title
-    html.H3("Make a Trade"),
+    html.H2("Section 2: Make a trade"),
     # Div to confirm what trade was made
     html.Div(id='trade-output'),
-    # Radio items to select buy or sell
-    dcc.RadioItems(
-        id='buy-or-sell',
-        options=[
-            {'label': 'BUY', 'value': 'BUY'},
-            {'label': 'SELL', 'value': 'SELL'}
+    html.Div(
+        children=[
+            html.Label('Choose type:'),
+            dcc.Dropdown(
+                options=[
+                    {'label': 'Stock', 'value': "STK"},
+                    {'label': 'FX Pairs', 'value': 'CASH'},
+                    {'label': 'Crypto', 'value': 'CRYPTO'},
+                    {'label': 'Bond', 'value': 'BOND'},
+                    {'label': 'Fund', 'value': 'FUND'}],
+                id='sec-type',
+                value='STK'
+            ),
         ],
-        value='BUY'
+        style={
+            'width': '150px'
+        }
     ),
-    # Text input for the currency pair to be traded
     html.Br(),
-    dcc.Input(id='trade-currency', value='AUDCAD', type='text'),
-    # Numeric input for the trade amount
-    dcc.Input(id='trade-amt', value='20000', type='number'),
-    # Submit button for the trade
-    html.Button('Trade', id='trade-button', n_clicks=0)
+    html.Div(
+        children=[
+            html.Label('Enter the Asset Symbol:'),
+            dcc.Input(
+                id='contract-symbol',
+                value='SPY',
+                type='text',
+            )
+        ],
+        style={
+            'display': 'inline-block',
+        }
+    ),
+    html.Br(),
+    html.Br(),
+    html.Div(
+        children=[
+            html.Label('Enter the Currency:'),
+            dcc.Input(
+                id='currency',
+                value='USD',
+                type='text',
+            )
+        ],
+        style={
+            'display': 'inline-block',
+        }
+    ),
+    html.Br(),
+    html.Br(),
+    html.Div(
+        children=[
+            html.Label('Enter the Exchange:'),
+            dcc.Input(
+                id='exchange',
+                value='SMART',
+                type='text',
+            )
+        ],
+        style={
+            'display': 'inline-block',
+        }
+    ),
+    html.Br(),
+    html.Br(),
+    html.Div(
+        children=[
+            html.Label('Enter the Primary Exchange:'),
+            dcc.Input(
+                id='primary-exchange',
+                value='ARCA',
+                type='text',
+            )
+        ],
+        style={
+            'display': 'inline-block',
 
+        }
+    ),
+    html.Br(),
+    html.Br(),
+    # market order or limit order
+    html.Div(
+        children=[
+            html.Div(
+                children=[
+                    dcc.RadioItems(
+                        id='mkt-or-lmt',
+                        options=[
+                            {'label': 'Market', 'value': 'MKT'},
+                            {'label': 'Limit', 'value': 'LMT'}
+                        ],
+                        value='MKT'
+                    )
+                ],
+            ),
+            html.Div(
+                children=[
+                    # Radio items to select buy or sell
+                    dcc.RadioItems(
+                        id='buy-or-sell',
+                        options=[
+                            {'label': 'BUY', 'value': 'BUY'},
+                            {'label': 'SELL', 'value': 'SELL'}
+                        ],
+                        value='BUY'
+                    )
+                ],
+            ),
+            html.Br(),
+            html.Div(
+                children=[
+                    html.Label('Enter limit price:'),
+                    dcc.Input(
+                        id='limit-price',
+                        type='number',
+                    )
+                ],
+            ),
+        ]
+    ),
+    html.Br(),
+    # Numeric input for the trade amount
+    html.Div(
+        children=[
+            html.Label('Enter the Trade Amount:'),
+            dcc.Input(
+                id='trade-amt',
+                value='200',
+                type='number',
+            )
+        ],
+        style={
+            'display': 'inline-block',
+        }
+    ),
+    html.Br(),
+    html.Br(),
+    # Submit button for the trade
+    html.Button('Trade', id='trade-button', n_clicks=0),
+    html.Br(),
+    html.Br(),
+    dash_table.DataTable(df.to_dict('records')),  #, [{"name": i, "id": i} for i in df.columns], id='table')
+    html.Br()
 ])
 
-
-# Callback for what to do when submit-button is pressed
 @app.callback(
-    [  # there's more than one output here, so you have to use square brackets to pass it in as an array.
+    [
+        Output("connect-indicator", "children"),
+        Output("sync-connection-status", "children")
+    ],
+    Input("connect-button", "n_clicks"),
+    [State("host", "value"), State("port", "value"), State("clientid", "value")]
+)
+def update_connect_indicator(n_clicks, host, port, clientid):
+    try:
+        managed_accounts = fetch_managed_accounts(host, port, clientid)
+        message = "Connection successful! Managed accounts: " + ", ".join(managed_accounts)
+        sync_connection_status = "True"
+    except Exception as inst:
+        x, y, z = inst.args
+        message = "Error in " + x + ": " + y + ". " + z
+        sync_connection_status = "False"
+    return message, sync_connection_status
+
+@app.callback(
+    [ # there's more than one output here, so you have to use square brackets to
+        # pass it in as an array.
         Output(component_id='currency-output', component_property='children'),
         Output(component_id='candlestick-graph', component_property='figure')
     ],
     Input('submit-button', 'n_clicks'),
-    # The callback function will
-    # fire when the submit button's n_clicks changes
-    # The currency input's value is passed in as a "State" because if the user is typing and the value changes, then
-    #   the callback function won't run. But the callback does run because the submit button was pressed, then the value
-    #   of 'currency-input' at the time the button was pressed DOES get passed in.
+    # The callback function will run when the submit button's n_clicks
+    #   changes because the user pressed "submit".
+    # The currency input's value is passed in as a "State" because if the user
+    #   is typing and the value changes, then the callback function won't run.
+    # But when the callback does run because the submit button was pressed,
+    #   then the value of 'currency-input' at the time the button was pressed
+    #   DOES get passed in to the function.
     [State('currency-input', 'value'), State('what-to-show', 'value'),
      State('edt-date', 'date'), State('edt-hour', 'value'),
      State('edt-minute', 'value'), State('edt-second', 'value'),
-     State('duration-num', 'value'), State('duration-unit', 'value'),
-     State('bar-size', 'value'), State('use-rth', 'value')]
+     State('sync-connection-status', 'children'), State('bar-size', 'value'),
+     State('use-rth', 'value'), State('duration-amount', 'value'),
+     State('duration-unit', 'value'), State('host', 'value'),
+     State('port', 'value'),
+     State('clientid', 'value')],
+    prevent_initial_call = True
 )
 def update_candlestick_graph(n_clicks, currency_string, what_to_show,
                              edt_date, edt_hour, edt_minute, edt_second,
-                             duration_num, duration_unit, bar_size, use_rth):
-    # n_clicks doesn't
-    # get used, we only include it for the dependency.
-
-    if any([i is None for i in [edt_date, edt_hour, edt_minute, edt_second]]):
-        endDateTime = ''
-    else:
-        endDateTime = ''.join(edt_date.split('-')) + ' ' + str(edt_hour).zfill(2) + ":" + \
-                      str(edt_minute).zfill(2) + ":" + str(edt_second).zfill(2)
-
-    if any([i is None for i in [duration_unit, duration_num]]):
-        durationStr = '30 D'
-    else:
-        durationStr = str(duration_num) + ' ' + duration_unit
+                             conn_status, bar_size, use_rth, duration_amount,
+                             duration_unit, host, port, clientid):
+    if not bool(conn_status):
+        return '', go.Figure()
 
     # First things first -- what currency pair history do you want to fetch?
     # Define it as a contract object!
     contract = Contract()
     contract.symbol = currency_string.split(".")[0]
-    contract.secType = 'CASH'
-    contract.exchange = 'IDEALPRO'  # 'IDEALPRO' is the currency exchange.
+    contract.secType  = 'CASH'
+    contract.exchange = 'IDEALPRO' # 'IDEALPRO' is the currency exchange.
     contract.currency = currency_string.split(".")[1]
 
-    contract_details = fetch_contract_details(contract)
+    try:
+        contract_details = fetch_contract_details(contract, hostname=host, port=port, client_id=clientid)
+    except:
+        return ("No contract found for " + currency_string), go.Figure()
 
-    message = "Submitted query for " + currency_string
+    contract_symbol_ibkr = contract_details.symbol[0]+'.'+contract_details.currency[0]
 
-    if isinstance(contract_details, str):
-        message = contract_details + ". Please check input!"
-        return message, go.Figure()
+    # If the contract name doesn't equal the one you want:
+    if not contract_symbol_ibkr == currency_string:
+        return ("Requested contract: " + currency_string + " but received " +
+                "contract: " + contract_symbol_ibkr), go.Figure()
 
-    # 1 situation
-    s = str(contract_details).split(",")[10]
-    if s == currency_string:
-        message = "Successfully found the right contract! " + message
+    if any([i is None for i in [edt_date, edt_hour, edt_minute, edt_second]]):
+        endDateTime = ''
     else:
-        return "Contract symbol does not inconsistent with the input data", go.Figure()
+        endDateTime = str(edt_date).replace("-","") + " " + \
+                      '{:0>2}'.format(edt_hour) + ":" + \
+                      '{:0>2}'.format(edt_hour) + ":" + \
+                      '{:0>2}'.format(edt_minute)
+
+    # time.sleep(5)
 
     ############################################################################
     ############################################################################
@@ -267,7 +497,7 @@ def update_candlestick_graph(n_clicks, currency_string, what_to_show,
     # Make the historical data request.
     # Where indicated below, you need to make a REACTIVE INPUT for each one of
     #   the required inputs for req_historical_data().
-    # This resource should help a lot: https://dash.plotly.com/dash-core-components
+    # This resource should help: https://dash.plotly.com/dash-core-components
 
     # Some default values are provided below to help with your testing.
     # Don't forget -- you'll need to update the signature in this callback
@@ -275,10 +505,13 @@ def update_candlestick_graph(n_clicks, currency_string, what_to_show,
     cph = fetch_historical_data(
         contract=contract,
         endDateTime=endDateTime,
-        durationStr=durationStr,  # <-- make a reactive input
-        barSizeSetting=bar_size,  # <-- make a reactive input
+        durationStr=str(duration_amount) + " " + duration_unit,
+        barSizeSetting=bar_size,
         whatToShow=what_to_show,
-        useRTH=use_rth  # <-- make a reactive input
+        useRTH=use_rth,
+        hostname=host,
+        port=port,
+        client_id=clientid
     )
     # # Make the candlestick figure
     fig = go.Figure(
@@ -293,64 +526,90 @@ def update_candlestick_graph(n_clicks, currency_string, what_to_show,
         ]
     )
     # # Give the candlestick figure a title
-    fig.update_layout(title=('Exchange Rate: ' + currency_string))
+    fig.update_layout(
+        title=('Exchange Rate: ' + currency_string + ': ' + what_to_show)
+    )
     ############################################################################
     ############################################################################
 
-    ############################################################################
-    ############################################################################
-    # This block returns a candlestick plot of apple stock prices. You'll need
-    # to delete or comment out this block and use your currency prices instead.
-    # df = pd.read_csv(
-    #     'https://raw.githubusercontent.com/plotly/datasets/master/finance-charts-apple.csv'
-    # )
-    # fig = go.Figure(
-    #     data=[
-    #         go.Candlestick(
-    #             x=df['Date'],
-    #             open=df['AAPL.Open'],
-    #             high=df['AAPL.High'],
-    #             low=df['AAPL.Low'],
-    #             close=df['AAPL.Close']
-    #         )
-    #     ]
-    # )
-    #
-    # currency_string = 'default Apple price data fetch'
-    ############################################################################
-    ############################################################################
+    currency_string = "fetched data for: " + contract_symbol_ibkr
 
-    # Return your updated text to currency-output, and the figure to candlestick-graph outputs
-    return message, fig
-
+    # Return your updated text to currency-output, and the figure to
+    #   candlestick-graph outputs
+    return currency_string, fig
 
 # Callback for what to do when trade-button is pressed
 @app.callback(
     # We're going to output the result to trade-output
     Output(component_id='trade-output', component_property='children'),
-    # We only want to run this callback function when the trade-button is pressed
+    # Only run this callback function when the trade-button is pressed
     Input('trade-button', 'n_clicks'),
-    # We DON'T want to run this function whenever buy-or-sell, trade-currency, or trade-amt is updated, so we pass those
-    #   in as States, not Inputs:
-    [State('buy-or-sell', 'value'), State('trade-currency', 'value'), State('trade-amt', 'value')],
-    # We DON'T want to start executing trades just because n_clicks was initialized to 0!!!
+    # We DON'T want to run this function whenever buy-or-sell, trade-currency,
+    #   or trade-amt is updated, so we pass those in as States, not Inputs:
+    [State('sec-type','value'), State('contract-symbol', 'value'), State('currency','value'),
+     State('exchange', 'value'), State('primary-exchange', 'value'), State('mkt-or-lmt', 'value'),
+     State('buy-or-sell', 'value'), State('limit-price', 'value'),
+     State('trade-amt', 'value'), State("host", "value"),
+     State("port", "value"), State("clientid", "value")],
+    # DON'T start executing trades just because n_clicks was initialized to 0!!!
     prevent_initial_call=True
 )
-def trade(n_clicks, action, trade_currency, trade_amt):  # Still don't use n_clicks, but we need the dependency
+def trade(n_clicks, sec_type, contract_symbol, currency, exchange, primary_exchange,
+          mkt_or_lmt, action, limit_price, trade_amt, host, port, clientid):
+    # Still don't use n_clicks, but we need the dependency
 
     # Make the message that we want to send back to trade-output
-    msg = action + ' ' + trade_amt + ' ' + trade_currency
+    msg = action + ' ' + str(trade_amt) + ' ' + contract_symbol
+    contract = Contract()
+    contract.symbol = contract_symbol
+    contract.secType = sec_type
+    contract.exchange = exchange
+    contract.currency = currency
+    if primary_exchange is not None:
+        contract.primaryExchange = primary_exchange
 
-    # Make our trade_order object -- a DICTIONARY.
-    trade_order = {
-        "action": action,
-        "trade_currency": trade_currency,
-        "trade_amt": trade_amt
+    order = Order()
+    order.action = action
+    order.orderType = mkt_or_lmt
+    order.totalQuantity = trade_amt
+
+    if mkt_or_lmt == 'LMT':
+        if limit_price is None:
+            return "Invalid Limit price"
+        order.lmtPrice = limit_price
+
+    fetch_contract_details(contract)
+
+    allInfo = place_order(contract, order)
+    # order_id = allInfo['order_id'][0]
+    time = fetch_current_time(host, port, clientid)    # fetch_current_time()
+    # client_id = allInfo['client_id'][0]
+    perm_id = allInfo['perm_id'][0]
+
+    trade_data = {
+        'timestamp': time,
+        'order_id': order.orderId,
+        'client_id': clientid,
+        'perm_id': perm_id,
+        'con_id': contract.conId,
+        'symbol': contract.symbol,
+        'action': action,
+        'size': trade_amt,
+        'order_type': order.orderType,
+        'lmt_price': limit_price
     }
 
-    # Return the message, which goes to the trade-output div's "children" attribute.
-    return msg
+    file_path = 'submitted_orders.csv'
+    df_file = pd.read_csv(file_path, index_col=0)
+    index = ['timestamp', 'order_id', 'client_id', 'perm_id',
+             'con_id', 'symbol', 'action', 'size', 'order_type', 'lmt_price']
+    df_file = pd.concat([df_file, pd.DataFrame(trade_data, index=[0])], ignore_index=True).set_index(index)
+    df_file.to_csv(file_path)
 
+    print("Successful!")
+
+    # Return the message, which goes to the trade-output div's children
+    return msg, df_file.to_dict('records')
 
 # Run it!
 if __name__ == '__main__':

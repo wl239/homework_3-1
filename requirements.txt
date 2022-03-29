@@ -4,3 +4,4 @@ ibapi
 jupyter
 kaleido
 waitress
+dash_daq
