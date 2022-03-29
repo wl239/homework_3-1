@@ -13,7 +13,9 @@ import dash_daq as daq
 from datetime import date
 
 # Make a Dash app!
+
 app = dash.Dash(__name__)
+server = app.server
 df = pd.read_csv('submitted_orders.csv')
 # Define the layout.
 app.layout = html.Div([
